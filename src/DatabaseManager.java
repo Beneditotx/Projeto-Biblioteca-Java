@@ -14,7 +14,6 @@ import java.util.Map;
 public class DatabaseManager {
 
     public static Connection getConnection() throws SQLException {
-
         Map<String, String> env = EnvLoader.loadEnv(".env");
 
         String url = env.get("DB_URL");
@@ -24,15 +23,14 @@ public class DatabaseManager {
         if (url == null || url.isEmpty() ||
                 usuario == null || usuario.isEmpty() ||
                 senha == null) {
-
             throw new SQLException("Configurações do banco de dados (DB_URL, DB_USER, DB_PASSWORD) não encontradas ou incompletas no arquivo .env. Verifique o arquivo .env na raiz do projeto.");
         }
-
         return DriverManager.getConnection(url, usuario, senha);
     }
 
     public boolean registrarLeitor(User user) {
-        String sql = "INSERT INTO Leitores (NomeCompleto, Username, Senha_Hash, Email, Telefone, Endereco, Data_Nascimento, CPF) " +
+
+        String sql = "INSERT INTO Leitores (NomeCompleto, Username, Senha_Hash, E_mail, Telefone, Endereco, Data_Nascimento, CPF) " +
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
@@ -58,6 +56,13 @@ public class DatabaseManager {
             return pstmt.executeUpdate() > 0;
         } catch (SQLException e) {
             System.err.println("Erro ao registrar leitor: " + e.getMessage());
+            if (e.getMessage().contains("Duplicate entry") && e.getMessage().contains("CPF")) {
+                System.err.println("Detalhe: Tentativa de inserir CPF duplicado.");
+            } else if (e.getMessage().contains("Duplicate entry") && e.getMessage().contains("Username")) {
+                System.err.println("Detalhe: Tentativa de inserir Username duplicado.");
+            } else if (e.getMessage().contains("Duplicate entry") && e.getMessage().contains("E_mail")) {
+                System.err.println("Detalhe: Tentativa de inserir E_mail duplicado.");
+            }
             return false;
         }
     }
@@ -72,7 +77,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            System.err.println("Erro ao buscar senha do usuário: " + e.getMessage());
+            System.err.println("Erro ao buscar senha do usuário '" + username + "': " + e.getMessage());
         }
         return null;
     }
@@ -84,7 +89,7 @@ public class DatabaseManager {
             pstmt.setString(2, username);
             return pstmt.executeUpdate() > 0;
         } catch (SQLException e) {
-            System.err.println("Erro ao atualizar senha: " + e.getMessage());
+            System.err.println("Erro ao atualizar senha para o usuário '" + username + "': " + e.getMessage());
             return false;
         }
     }
@@ -99,13 +104,14 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            System.err.println("Erro ao verificar username: " + e.getMessage());
+            System.err.println("Erro ao verificar username '" + username + "': " + e.getMessage());
         }
         return false;
     }
 
     public User buscarUsuarioCompletoPorUsername(String username) {
-        String sql = "SELECT ID_LEITOR, NomeCompleto, Username, Senha_Hash, Email, Telefone, Endereco, Data_Nascimento, CPF " +
+        // CORREÇÃO: 'Email' mudado para 'E_mail' na query e no rs.getString()
+        String sql = "SELECT ID_LEITOR, NomeCompleto, Username, Senha_Hash, E_mail, Telefone, Endereco, Data_Nascimento, CPF " +
                 "FROM Leitores WHERE Username = ?";
         User user = null;
         try (Connection conn = getConnection(); PreparedStatement pstmt = conn.prepareStatement(sql)) {
@@ -115,10 +121,11 @@ public class DatabaseManager {
                     int idLeitor = rs.getInt("ID_LEITOR");
                     String hashedPassword = rs.getString("Senha_Hash");
                     String nomeCompleto = rs.getString("NomeCompleto");
-                    String[] nameParts = nomeCompleto.split(" ", 2);
+                    String[] nameParts = nomeCompleto != null ? nomeCompleto.split(" ", 2) : new String[]{""};
                     String firstName = nameParts[0];
                     String lastName = nameParts.length > 1 ? nameParts[1] : "";
-                    String email = rs.getString("Email");
+
+                    String email = rs.getString("E_mail"); // CORRIGIDO
                     Date sqlBirthDate = rs.getDate("Data_Nascimento");
                     String birthDateStr = "";
                     int age = 0;
@@ -130,18 +137,24 @@ public class DatabaseManager {
                     String phone = rs.getString("Telefone");
                     String address = rs.getString("Endereco");
                     String cpf = rs.getString("CPF");
+
                     user = new User(idLeitor, username, hashedPassword, firstName, lastName, email, birthDateStr, phone, address, cpf, age);
                 }
             }
         } catch (SQLException e) {
-            System.err.println("Erro ao buscar usuário completo: " + e.getMessage());
+            System.err.println("Erro ao buscar usuário completo '" + username + "': " + e.getMessage());
         }
         return user;
     }
 
     public List<BooksManager.Book> buscarTodosOsLivros() {
         List<BooksManager.Book> livros = new ArrayList<>();
-        String sql = "SELECT ID_LIVRO, Titulo, Autor, Editora, Categoria, QuantidadeTotal, QuantidadeDisponivel FROM Livros";
+
+        String sql = "SELECT l.ID_LIVRO, l.Titulo, l.Autor, e.Nome AS Editora, c.Nome AS Categoria, " +
+                "l.QuantidadeTotal, l.QuantidadeDisponivel " +
+                "FROM Livros l " +
+                "JOIN Editoras e ON l.ID_EDITORA = e.ID_EDITORA " +
+                "JOIN Categorias c ON l.ID_CATEGORIA = c.ID_CATEGORIA";
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql);
              ResultSet rs = pstmt.executeQuery()) {
@@ -164,7 +177,7 @@ public class DatabaseManager {
 
     public boolean registrarEmprestimo(int idLeitor, int idLivro) {
         String sqlCheckAvailability = "SELECT QuantidadeDisponivel FROM Livros WHERE ID_LIVRO = ? FOR UPDATE";
-        String sqlInsertEmprestimo = "INSERT INTO Emprestimos (ID_LEITOR, Data_Devolucao_Prevista) VALUES (?, ?)";
+        String sqlInsertEmprestimo = "INSERT INTO Emprestimos (ID_LEITOR, Data_Devolucao) VALUES (?, ?)";
         String sqlInsertItemEmprestimo = "INSERT INTO Itens_Emprestimo (ID_EMPRESTIMO, ID_LIVRO) VALUES (?, ?)";
         String sqlUpdateLivro = "UPDATE Livros SET QuantidadeDisponivel = QuantidadeDisponivel - 1 WHERE ID_LIVRO = ? AND QuantidadeDisponivel > 0";
         Connection conn = null;
@@ -191,8 +204,8 @@ public class DatabaseManager {
             }
             try (PreparedStatement pstmtEmprestimo = conn.prepareStatement(sqlInsertEmprestimo, Statement.RETURN_GENERATED_KEYS)) {
                 pstmtEmprestimo.setInt(1, idLeitor);
-                LocalDate dataDevolucaoPrevista = LocalDate.now().plusDays(14);
-                pstmtEmprestimo.setDate(2, Date.valueOf(dataDevolucaoPrevista));
+                LocalDate dataDevolucao = LocalDate.now().plusDays(14);
+                pstmtEmprestimo.setDate(2, Date.valueOf(dataDevolucao));
                 pstmtEmprestimo.executeUpdate();
                 try (ResultSet generatedKeys = pstmtEmprestimo.getGeneratedKeys()) {
                     if (generatedKeys.next()) {
@@ -211,7 +224,9 @@ public class DatabaseManager {
                 pstmtUpdateLivro.setInt(1, idLivro);
                 int rowsAffected = pstmtUpdateLivro.executeUpdate();
                 if (rowsAffected == 0) {
-                    throw new SQLException("Não foi possível decrementar a quantidade do livro ID " + idLivro);
+                    conn.rollback();
+                    System.err.println("Não foi possível decrementar a quantidade do livro ID " + idLivro + ". A quantidade pode ter sido alterada por outra transação ou o livro não tem estoque.");
+                    return false;
                 }
             }
             conn.commit();
@@ -240,7 +255,8 @@ public class DatabaseManager {
 
     public List<EmprestimoDetalhe> buscarEmprestimosAtivosPorUsuario(int idLeitor) {
         List<EmprestimoDetalhe> emprestimosAtivos = new ArrayList<>();
-        String sql = "SELECT ie.ID_ITEM, ie.ID_LIVRO, l.Titulo, e.Data_Devolucao_Prevista " +
+
+        String sql = "SELECT ie.ID_ITEM, ie.ID_LIVRO, l.Titulo, e.Data_Devolucao " +
                 "FROM Itens_Emprestimo ie " +
                 "JOIN Emprestimos e ON ie.ID_EMPRESTIMO = e.ID_EMPRESTIMO " +
                 "JOIN Livros l ON ie.ID_LIVRO = l.ID_LIVRO " +
@@ -252,12 +268,12 @@ public class DatabaseManager {
                     int idItem = rs.getInt("ID_ITEM");
                     int idLivro = rs.getInt("ID_LIVRO");
                     String titulo = rs.getString("Titulo");
-                    LocalDate dataDevolucaoPrevista = rs.getDate("Data_Devolucao_Prevista").toLocalDate();
-                    emprestimosAtivos.add(new EmprestimoDetalhe(idItem, idLivro, titulo, dataDevolucaoPrevista));
+                    LocalDate dataDevolucao = rs.getDate("Data_Devolucao").toLocalDate();
+                    emprestimosAtivos.add(new EmprestimoDetalhe(idItem, idLivro, titulo, dataDevolucao));
                 }
             }
         } catch (SQLException e) {
-            System.err.println("Erro ao buscar empréstimos ativos: " + e.getMessage());
+            System.err.println("Erro ao buscar empréstimos ativos para o leitor ID " + idLeitor + ": " + e.getMessage());
         }
         return emprestimosAtivos;
     }
@@ -274,18 +290,24 @@ public class DatabaseManager {
                 int itemRowsAffected = pstmtItem.executeUpdate();
                 if (itemRowsAffected == 0) {
                     conn.rollback();
-                    System.err.println("Item não encontrado ou já devolvido: ID " + idItemEmprestimo);
+                    System.err.println("Item de empréstimo com ID " + idItemEmprestimo + " não encontrado ou já devolvido.");
                     return false;
                 }
             }
             try (PreparedStatement pstmtLivro = conn.prepareStatement(sqlUpdateLivro)) {
                 pstmtLivro.setInt(1, idLivro);
-                pstmtLivro.executeUpdate();
+
+                int livroRowsAffected = pstmtLivro.executeUpdate();
+                if (livroRowsAffected == 0) {
+                    conn.rollback();
+                    System.err.println("Não foi possível atualizar a quantidade do livro ID " + idLivro + ". Livro não encontrado?");
+                    return false;
+                }
             }
             conn.commit();
             return true;
         } catch (SQLException e) {
-            System.err.println("Erro ao registrar devolução: " + e.getMessage());
+            System.err.println("Erro ao registrar devolução para o item ID " + idItemEmprestimo + ": " + e.getMessage());
             if (conn != null) {
                 try {
                     conn.rollback();
@@ -312,7 +334,7 @@ public class DatabaseManager {
         }
 
         String sqlCheckAvailability = "SELECT QuantidadeDisponivel FROM Livros WHERE ID_LIVRO = ? FOR UPDATE";
-        String sqlInsertEmprestimo = "INSERT INTO Emprestimos (ID_LEITOR, Data_Devolucao_Prevista) VALUES (?, ?)";
+        String sqlInsertEmprestimo = "INSERT INTO Emprestimos (ID_LEITOR, Data_Devolucao) VALUES (?, ?)";
         String sqlInsertItemEmprestimo = "INSERT INTO Itens_Emprestimo (ID_EMPRESTIMO, ID_LIVRO) VALUES (?, ?)";
         String sqlUpdateLivro = "UPDATE Livros SET QuantidadeDisponivel = QuantidadeDisponivel - 1 WHERE ID_LIVRO = ? AND QuantidadeDisponivel > 0";
         Connection conn = null;
@@ -324,8 +346,8 @@ public class DatabaseManager {
 
             try (PreparedStatement pstmtEmprestimo = conn.prepareStatement(sqlInsertEmprestimo, Statement.RETURN_GENERATED_KEYS)) {
                 pstmtEmprestimo.setInt(1, idLeitor);
-                LocalDate dataDevolucaoPrevista = LocalDate.now().plusDays(14);
-                pstmtEmprestimo.setDate(2, Date.valueOf(dataDevolucaoPrevista));
+                LocalDate dataDevolucao = LocalDate.now().plusDays(14); // CORRIGIDO
+                pstmtEmprestimo.setDate(2, Date.valueOf(dataDevolucao));
                 pstmtEmprestimo.executeUpdate();
 
                 try (ResultSet generatedKeys = pstmtEmprestimo.getGeneratedKeys()) {
@@ -338,13 +360,11 @@ public class DatabaseManager {
             }
 
             for (int idLivro : idsLivros) {
-
                 try (PreparedStatement pstmtCheck = conn.prepareStatement(sqlCheckAvailability)) {
                     pstmtCheck.setInt(1, idLivro);
                     try (ResultSet rs = pstmtCheck.executeQuery()) {
                         if (rs.next()) {
                             if (rs.getInt("QuantidadeDisponivel") <= 0) {
-
                                 conn.rollback();
                                 System.err.println("Livro com ID " + idLivro + " não está disponível (quantidade esgotada durante a transação).");
                                 return false;
@@ -367,14 +387,14 @@ public class DatabaseManager {
                     pstmtUpdateLivro.setInt(1, idLivro);
                     int rowsAffected = pstmtUpdateLivro.executeUpdate();
                     if (rowsAffected == 0) {
-                        throw new SQLException("Não foi possível decrementar a quantidade do livro ID " + idLivro + ". Verifique a disponibilidade (concorrência?).");
+                        conn.rollback();
+                        System.err.println("Não foi possível decrementar a quantidade do livro ID " + idLivro + " durante múltiplos empréstimos. Verifique a disponibilidade.");
+                        return false;
                     }
                 }
             }
-
             conn.commit();
             return true;
-
         } catch (SQLException e) {
             System.err.println("Erro ao registrar múltiplos empréstimos: " + e.getMessage());
             if (conn != null) {
@@ -386,7 +406,6 @@ public class DatabaseManager {
             }
             return false;
         } finally {
-
             if (conn != null) {
                 try {
                     conn.setAutoCommit(true);
@@ -428,13 +447,16 @@ public class DatabaseManager {
 
                 try (PreparedStatement pstmtLivro = conn.prepareStatement(sqlUpdateLivro)) {
                     pstmtLivro.setInt(1, idLivro);
-                    pstmtLivro.executeUpdate();
+                    int livroRowsAffected = pstmtLivro.executeUpdate();
+                    if (livroRowsAffected == 0) {
+                        conn.rollback();
+                        System.err.println("Não foi possível atualizar a quantidade do livro ID " + idLivro + " durante múltiplas devoluções. Livro não encontrado?");
+                        return false;
+                    }
                 }
             }
-
             conn.commit();
             return true;
-
         } catch (SQLException e) {
             System.err.println("Erro ao registrar múltiplas devoluções no banco de dados: " + e.getMessage());
             if (conn != null) {
@@ -461,8 +483,12 @@ public class DatabaseManager {
     public List<BooksManager.Book> buscarLivrosPorTituloComLike(String termoBusca) {
         List<BooksManager.Book> livrosEncontrados = new ArrayList<>();
 
-        String sql = "SELECT ID_LIVRO, Titulo, Autor, Editora, Categoria, QuantidadeTotal, QuantidadeDisponivel " +
-                "FROM Livros WHERE Titulo LIKE ?";
+        String sql = "SELECT l.ID_LIVRO, l.Titulo, l.Autor, e.Nome AS Editora, c.Nome AS Categoria, " +
+                "l.QuantidadeTotal, l.QuantidadeDisponivel " +
+                "FROM Livros l " +
+                "JOIN Editoras e ON l.ID_EDITORA = e.ID_EDITORA " +
+                "JOIN Categorias c ON l.ID_CATEGORIA = c.ID_CATEGORIA " +
+                "WHERE l.Titulo LIKE ?";
 
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
@@ -489,8 +515,13 @@ public class DatabaseManager {
 
     public List<BooksManager.Book> buscarLivrosPorAutorComLike(String termoBusca) {
         List<BooksManager.Book> livrosEncontrados = new ArrayList<>();
-        String sql = "SELECT ID_LIVRO, Titulo, Autor, Editora, Categoria, QuantidadeTotal, QuantidadeDisponivel " +
-                "FROM Livros WHERE Autor LIKE ?";
+
+        String sql = "SELECT l.ID_LIVRO, l.Titulo, l.Autor, e.Nome AS Editora, c.Nome AS Categoria, " +
+                "l.QuantidadeTotal, l.QuantidadeDisponivel " +
+                "FROM Livros l " +
+                "JOIN Editoras e ON l.ID_EDITORA = e.ID_EDITORA " +
+                "JOIN Categorias c ON l.ID_CATEGORIA = c.ID_CATEGORIA " +
+                "WHERE l.Autor LIKE ?";
 
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
