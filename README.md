@@ -28,7 +28,7 @@ Os livros são carregados da tabela Livros do banco de dados, onde cada título 
 O método borrowBooks() permite ao usuário selecionar um livro disponível. Se o empréstimo for confirmado, ele chama o DatabaseManager para registrar o empréstimo nas tabelas Emprestimos e Itens_Emprestimo, e para decrementar a QuantidadeDisponivel do livro na tabela Livros (tudo dentro de uma transação).
 O método handleBookReturn() permite ao usuário visualizar seus empréstimos ativos (via DatabaseManager) e selecionar um item para devolução. A devolução é registrada no DatabaseManager, que atualiza a tabela Itens_Emprestimo e incrementa a QuantidadeDisponivel do livro na tabela Livros (também em uma transação). A classe interna Book representa os dados de um livro, incluindo suas quantidades.
 
-Classe EmprestimoDetalhe ℹ
+Classe EmprestimoDetalhe 
 Classe auxiliar utilizada para transportar e exibir informações detalhadas sobre os empréstimos ativos de um usuário, como ID do item, ID do livro, título e data de devolução prevista.
 
 Conclusão 
