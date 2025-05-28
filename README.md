@@ -11,7 +11,7 @@ Representa o modelo de dados de um usuário (leitor). Contém atributos como idL
 Classe PasswordManager 
 Esta classe é um componente crucial responsável por garantir a segurança das senhas dos usuários. Ela utiliza o algoritmo BCrypt para gerar um "hash" seguro das senhas antes de serem armazenadas no banco de dados e para verificar as senhas durante o processo de login.
 
-Classe DatabaseManager 🗄
+Classe DatabaseManager 
 Esta classe é central para a persistência de dados. Ela encapsula toda a lógica de conexão com o banco de dados MySQL utilizando JDBC. Fornece métodos para realizar operações CRUD (Create, Read, Update, Delete) nas tabelas do banco, como registrar novos leitores, buscar informações de usuários, atualizar senhas, verificar a existência de usernames, carregar livros, registrar empréstimos e devoluções, e atualizar quantidades de livros. Utiliza PreparedStatement para prevenir SQL Injection e gerencia transações para garantir a atomicidade de operações críticas (como empréstimos e devoluções).
 
 Classe RegisterManager 
